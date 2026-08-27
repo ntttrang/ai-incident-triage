@@ -47,7 +47,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.6.0
+          version: v2.13.1
           args: ./...
 
       - name: Unit tests
@@ -77,7 +77,7 @@ jobs:
         run: go mod download
 
       - name: Run gosec
-        uses: securego/gosec@master
+        uses: securego/gosec@v2.29.0
         with:
           args: -no-fail -fmt sarif -out gosec.sarif ./...
         continue-on-error: true

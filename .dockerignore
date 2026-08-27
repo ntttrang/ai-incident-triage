@@ -12,7 +12,9 @@ coverage.out
 coverage.html
 *.test
 .DS_Store
-deployments/
+deploy/
+loadtest/
+scripts/
 .gitignore
 .golangci.yml
 Makefile

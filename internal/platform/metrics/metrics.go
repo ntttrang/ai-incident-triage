@@ -10,8 +10,6 @@ import (
 type Metrics struct {
 	HTTPRequestsTotal   *prometheus.CounterVec
 	HTTPRequestDuration *prometheus.HistogramVec
-	AuthLoginTotal      *prometheus.CounterVec
-	UserOperationsTotal *prometheus.CounterVec
 	DBPoolAcquired      prometheus.Gauge
 	DBPoolIdle          prometheus.Gauge
 	DBPoolTotal         prometheus.Gauge
@@ -44,20 +42,6 @@ func New() *Metrics {
 			},
 			[]string{"method", "path"},
 		),
-		AuthLoginTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "auth_login_total",
-				Help: "Total login attempts by result",
-			},
-			[]string{"result"},
-		),
-		UserOperationsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "user_operations_total",
-				Help: "Total user operations by operation and result",
-			},
-			[]string{"op", "result"},
-		),
 		DBPoolAcquired: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "db_pool_acquired_connections",
 			Help: "Number of currently acquired database connections",
@@ -79,8 +63,6 @@ func New() *Metrics {
 	reg.MustRegister(
 		m.HTTPRequestsTotal,
 		m.HTTPRequestDuration,
-		m.AuthLoginTotal,
-		m.UserOperationsTotal,
 		m.DBPoolAcquired,
 		m.DBPoolIdle,
 		m.DBPoolTotal,
@@ -98,20 +80,4 @@ func (m *Metrics) ObserveDBPool(stat *pgxpool.Stat) {
 	m.DBPoolIdle.Set(float64(stat.IdleConns()))
 	m.DBPoolTotal.Set(float64(stat.TotalConns()))
 	m.DBPoolMax.Set(float64(stat.MaxConns()))
-}
-
-// IncAuthLogin increments the auth login counter.
-func (m *Metrics) IncAuthLogin(result string) {
-	if m == nil {
-		return
-	}
-	m.AuthLoginTotal.WithLabelValues(result).Inc()
-}
-
-// IncUserOp increments the user operations counter.
-func (m *Metrics) IncUserOp(op, result string) {
-	if m == nil {
-		return
-	}
-	m.UserOperationsTotal.WithLabelValues(op, result).Inc()
 }

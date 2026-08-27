@@ -14096,7 +14096,7 @@
     "database",
     "monitoring",
     "pg_exporter",
-    "0.17.2"
+    "0.17.1"
   ],
   "templating": {
     "list": [

@@ -46,7 +46,7 @@ func run() error {
 		Service: cfg.ServiceName,
 		Env:     cfg.Env,
 	})
-	log.Info("starting api", "env", cfg.Env, "port", cfg.Port, "tracing", cfg.TracingEnabled())
+	log.Info("starting api", "port", cfg.Port, "tracing", cfg.TracingEnabled())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
