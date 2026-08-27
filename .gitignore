@@ -1,0 +1,40 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/api-server
+
+# Test
+*.test
+coverage.out
+coverage.html
+
+# Go
+vendor/
+
+# Env / secrets
+.env
+.env.local
+*.pem
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Build / tooling
+dist/
+tmp/
+.golangci.cache/
+
+# AI
+.claude
+.agentkit
+plans/
+# Stray root binaries
+/main
