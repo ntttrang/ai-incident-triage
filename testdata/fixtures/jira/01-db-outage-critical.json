@@ -1,0 +1,53 @@
+{
+  "timestamp": 1785000000000,
+  "webhookEvent": "jira:issue_created",
+  "issue": {
+    "id": 40097,
+    "key": "PROD-101",
+    "fields": {
+      "summary": "Production database unreachable from all app hosts",
+      "description": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "PgBouncer errors: 'server conn crashed?'. All writes failing since 08:12 UTC."
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Dashboards: order-service and payments down. CI unaffected."
+              }
+            ]
+          }
+        ]
+      },
+      "issuetype": {
+        "name": "Bug"
+      },
+      "priority": {
+        "name": "Highest"
+      },
+      "status": {
+        "name": "Open"
+      },
+      "labels": [
+        "production",
+        "database",
+        "sev1"
+      ],
+      "reporter": {
+        "displayName": "Grace Hopper"
+      },
+      "created": "2026-08-27T08:30:00.000+0700"
+    }
+  }
+}

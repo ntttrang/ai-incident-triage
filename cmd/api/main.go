@@ -15,11 +15,13 @@ import (
 	"github.com/joho/godotenv"
 
 	httpadapter "github.com/ntttrang/ai-incident-triage/internal/adapter/http"
+	postgresadapter "github.com/ntttrang/ai-incident-triage/internal/adapter/postgres"
 	"github.com/ntttrang/ai-incident-triage/internal/platform/config"
 	"github.com/ntttrang/ai-incident-triage/internal/platform/database"
 	"github.com/ntttrang/ai-incident-triage/internal/platform/logger"
 	"github.com/ntttrang/ai-incident-triage/internal/platform/metrics"
 	"github.com/ntttrang/ai-incident-triage/internal/platform/tracing"
+	"github.com/ntttrang/ai-incident-triage/internal/service"
 )
 
 func main() {
@@ -82,10 +84,15 @@ func run() error {
 	m := metrics.New()
 	go collectDBPoolMetrics(pool, m)
 
+	incidentRepo := postgresadapter.NewIncidentRepository(pool)
+	incidentSvc := service.NewIncidentService(incidentRepo, log)
+
 	router := httpadapter.NewRouter(httpadapter.Dependencies{
 		Log:         log,
 		Metrics:     m,
 		Health:      httpadapter.NewHealthHandler(pool),
+		Webhook:     httpadapter.NewWebhookHandler(incidentSvc, cfg.WebhookSecret, log),
+		Incidents:   httpadapter.NewIncidentHandler(incidentSvc, log),
 		Env:         cfg.Env,
 		ServiceName: cfg.ServiceName,
 	})

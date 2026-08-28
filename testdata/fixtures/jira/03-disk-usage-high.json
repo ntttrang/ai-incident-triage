@@ -1,0 +1,43 @@
+{
+  "timestamp": 1785000000000,
+  "webhookEvent": "jira:issue_created",
+  "issue": {
+    "id": 46645,
+    "key": "INFRA-301",
+    "fields": {
+      "summary": "Disk usage 92% on kafka-broker-07",
+      "description": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Trend shows 1.2%/hour growth. Log retention likely culprit after debug logging enabled yesterday."
+              }
+            ]
+          }
+        ]
+      },
+      "issuetype": {
+        "name": "Task"
+      },
+      "priority": {
+        "name": "High"
+      },
+      "status": {
+        "name": "Open"
+      },
+      "labels": [
+        "infra",
+        "kafka"
+      ],
+      "reporter": {
+        "displayName": "Grace Hopper"
+      },
+      "created": "2026-08-27T08:30:00.000+0700"
+    }
+  }
+}

@@ -19,6 +19,8 @@ type Dependencies struct {
 	Log         *slog.Logger
 	Metrics     *metrics.Metrics
 	Health      *HealthHandler
+	Webhook     *WebhookHandler
+	Incidents   *IncidentHandler
 	Env         string
 	ServiceName string
 }
@@ -50,6 +52,11 @@ func NewRouter(deps Dependencies) *gin.Engine {
 	r.GET("/healthz", deps.Health.Liveness)
 	r.GET("/readyz", deps.Health.Readiness)
 	r.GET("/metrics", gin.WrapH(promhttp.HandlerFor(deps.Metrics.Registry, promhttp.HandlerOpts{})))
+
+	api := r.Group("/api/v1")
+	api.POST("/webhooks/jira", deps.Webhook.ReceiveJira)
+	api.GET("/incidents", deps.Incidents.List)
+	api.GET("/incidents/:id", deps.Incidents.Get)
 
 	if deps.Env != "production" {
 		registerPprof(r)

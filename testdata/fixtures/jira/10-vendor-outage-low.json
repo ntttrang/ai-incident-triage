@@ -1,0 +1,43 @@
+{
+  "timestamp": 1785000000000,
+  "webhookEvent": "jira:issue_created",
+  "issue": {
+    "id": 40110,
+    "key": "OPS-204",
+    "fields": {
+      "summary": "Third-party SMS provider reporting degraded delivery",
+      "description": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Vendor status page: 30min ETD. Failover provider available if it degrades further."
+              }
+            ]
+          }
+        ]
+      },
+      "issuetype": {
+        "name": "Task"
+      },
+      "priority": {
+        "name": "Low"
+      },
+      "status": {
+        "name": "Open"
+      },
+      "labels": [
+        "vendor",
+        "sms"
+      ],
+      "reporter": {
+        "displayName": "Grace Hopper"
+      },
+      "created": "2026-08-27T08:30:00.000+0700"
+    }
+  }
+}

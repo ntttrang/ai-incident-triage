@@ -24,6 +24,7 @@ type Config struct {
 	DBMaxConns       int32
 	DBMinConns       int32
 	MigrationsPath   string
+	WebhookSecret    string
 }
 
 // TracingEnabled reports whether an OTLP endpoint is configured.
@@ -59,6 +60,14 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("OTEL_TRACES_SAMPLER_ARG must be between 0 and 1")
 	}
 	cfg.TraceSampleRatio = ratio
+
+	// Fail-closed by design: the webhook endpoint must never boot with an
+	// unknown secret (an open door to forged incidents). No skip path, no dev
+	// bypass — seed and local compose both provide a secret.
+	cfg.WebhookSecret = os.Getenv("WEBHOOK_SECRET")
+	if cfg.WebhookSecret == "" {
+		return nil, fmt.Errorf("WEBHOOK_SECRET must be set (see .env.example)")
+	}
 
 	return cfg, nil
 }

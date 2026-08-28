@@ -1,0 +1,43 @@
+{
+  "timestamp": 1785000000000,
+  "webhookEvent": "jira:issue_created",
+  "issue": {
+    "id": 44405,
+    "key": "API-401",
+    "fields": {
+      "summary": "Search API p95 latency above 800ms for 30 minutes",
+      "description": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Normal baseline is 210ms. No deploy in window. ElasticSearch threadpool queue growing."
+              }
+            ]
+          }
+        ]
+      },
+      "issuetype": {
+        "name": "Bug"
+      },
+      "priority": {
+        "name": "Medium"
+      },
+      "status": {
+        "name": "Open"
+      },
+      "labels": [
+        "api",
+        "latency"
+      ],
+      "reporter": {
+        "displayName": "Grace Hopper"
+      },
+      "created": "2026-08-27T08:30:00.000+0700"
+    }
+  }
+}

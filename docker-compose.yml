@@ -42,6 +42,10 @@ services:
       DB_NAME: ai_incident_triage
       DB_SSLMODE: disable
       MIGRATIONS_PATH: file:///app/migrations
+      # The app refuses to boot with an empty secret (fail-closed). Compose
+      # defaults to a known dev value so the demo stack starts on a fresh
+      # clone; set WEBHOOK_SECRET in .env to override both app and seed.
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-webhook-secret-change-me}
     depends_on:
       postgres:
         condition: service_healthy

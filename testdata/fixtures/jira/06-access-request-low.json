@@ -1,0 +1,42 @@
+{
+  "timestamp": 1785000000000,
+  "webhookEvent": "jira:issue_created",
+  "issue": {
+    "id": 44034,
+    "key": "OPS-202",
+    "fields": {
+      "summary": "Request: read access to staging Grafana for new QA joiner",
+      "description": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Onboarding for new team member, needs dashboard view access for 2 weeks."
+              }
+            ]
+          }
+        ]
+      },
+      "issuetype": {
+        "name": "Access"
+      },
+      "priority": {
+        "name": "Low"
+      },
+      "status": {
+        "name": "Open"
+      },
+      "labels": [
+        "access"
+      ],
+      "reporter": {
+        "displayName": "Ada Lovelace"
+      },
+      "created": "2026-08-27T08:30:00.000+0700"
+    }
+  }
+}
