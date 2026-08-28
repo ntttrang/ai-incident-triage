@@ -39,7 +39,10 @@ func main() {
 	// fresh clone; a WEBHOOK_SECRET in .env or the shell overrides both.
 	secret := os.Getenv("WEBHOOK_SECRET")
 	if secret == "" {
-		secret = "dev-webhook-secret-change-me"
+		// Public by design: matches the compose dev fallback so a fresh clone
+		// works end to end; the API itself refuses to start without a real
+		// WEBHOOK_SECRET. Not a credential.
+		secret = "dev-webhook-secret-change-me" // #nosec G101 -- shared dev default, not a secret
 		fmt.Println("note: WEBHOOK_SECRET unset, using compose dev default")
 	}
 
@@ -62,6 +65,8 @@ func main() {
 	res := seedResult{}
 
 	for _, name := range names {
+		// #nosec G304 -- the path is a fixture file from the operator-supplied
+		// -fixtures directory; reading those files is this tool's purpose.
 		body, err := os.ReadFile(filepath.Join(*fixturesDir, name))
 		if err != nil {
 			fatal("read fixture %s: %v", name, err)
