@@ -6,7 +6,7 @@ Built in Go with a hexagonal architecture (ports & adapters), forked from [go-he
 
 ## Status
 
-Phase 1 — repository bootstrap complete: API skeleton (health, metrics, middleware chain), CI, Docker Compose with the full observability stack. Incident ingest, LLM triage worker, and dashboards land in the next phases.
+Phase 1 — repository bootstrap complete. Phase 2 — incident domain live: signed Jira webhook ingest with two-level idempotency, incident read API, `make seed`. LLM triage worker and dashboards land in the next phases.
 
 ## Quick start (Docker Compose)
 
@@ -75,6 +75,7 @@ make run
 | `make lint` | golangci-lint |
 | `make build` | Build binary to `bin/api` |
 | `make up` / `make down` | Start / stop the full stack |
+| `make seed` | POST Jira fixtures through the webhook (stack must be up) |
 
 ## API
 
@@ -84,8 +85,30 @@ make run
 | GET | `/readyz` | Readiness (DB ping) |
 | GET | `/metrics` | Prometheus metrics |
 | GET | `/debug/pprof/*` | Go pprof (non-production only) |
+| POST | `/api/v1/webhooks/jira` | Ingest a Jira issue webhook (HMAC-verified, idempotent) |
+| GET | `/api/v1/incidents` | List incidents (`status`, `severity`, `limit`, `offset`) |
+| GET | `/api/v1/incidents/{id}` | One incident |
 
-Incident endpoints land with the ingest phase.
+**Webhook ingest.** The body must be a Jira issue event (`issue.key` and
+`issue.fields.summary` required; anything issue-shaped is stored). Requests are
+authenticated with `X-Hub-Signature: sha256=<hex>` — HMAC-SHA256 of the raw body
+with `WEBHOOK_SECRET` (Jira Cloud's native scheme; the app refuses to boot
+without the secret set). Delivery-level idempotency via the
+`X-Atlassian-Webhook-Identifier` header:
+
+| Delivery | Response |
+|----------|----------|
+| New issue | `202` `{"outcome":"created"}` |
+| Same issue, new delivery (e.g. `jira:issue_updated`) | `200` `{"outcome":"updated"}` — raw payload and delivery id refreshed |
+| Replayed delivery identifier (Jira redelivers up to 5×) | `200` `{"outcome":"duplicate"}` — no write |
+
+The read API never returns the stored raw webhook body (`incidents.raw` stays in
+Postgres for debugging). Seed 12 sample incidents (10 issues + one update + one
+replay) through the real HTTP path:
+
+```bash
+make seed
+```
 
 ## Configuration
 

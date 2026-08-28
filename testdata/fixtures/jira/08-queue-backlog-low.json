@@ -1,0 +1,43 @@
+{
+  "timestamp": 1785000000000,
+  "webhookEvent": "jira:issue_created",
+  "issue": {
+    "id": 40277,
+    "key": "OPS-203",
+    "fields": {
+      "summary": "Email notification queue backlog at 40k messages",
+      "description": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Consumer restarted after OOM kill; draining at 500/min. ETA clear 80 minutes."
+              }
+            ]
+          }
+        ]
+      },
+      "issuetype": {
+        "name": "Bug"
+      },
+      "priority": {
+        "name": "Low"
+      },
+      "status": {
+        "name": "Open"
+      },
+      "labels": [
+        "queue",
+        "email"
+      ],
+      "reporter": {
+        "displayName": "Grace Hopper"
+      },
+      "created": "2026-08-27T08:30:00.000+0700"
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "timestamp": 1785000000000,
+  "webhookEvent": "jira:issue_created",
+  "issue": {
+    "id": 45803,
+    "key": "INFRA-302",
+    "fields": {
+      "summary": "TLS certificate for api.example.com expires in 7 days",
+      "description": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "ACME renewal job failed with DNS-01 challenge timeout. Manual check of route53 tokens needed."
+              }
+            ]
+          }
+        ]
+      },
+      "issuetype": {
+        "name": "Task"
+      },
+      "priority": {
+        "name": "Medium"
+      },
+      "status": {
+        "name": "Open"
+      },
+      "labels": [
+        "infra",
+        "tls"
+      ],
+      "reporter": {
+        "displayName": "Grace Hopper"
+      },
+      "created": "2026-08-27T08:30:00.000+0700"
+    }
+  }
+}

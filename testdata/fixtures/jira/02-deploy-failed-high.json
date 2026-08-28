@@ -1,0 +1,52 @@
+{
+  "timestamp": 1785000000000,
+  "webhookEvent": "jira:issue_created",
+  "issue": {
+    "id": 40618,
+    "key": "OPS-201",
+    "fields": {
+      "summary": "checkout-service v2.14.3 deploy failed on canary pool",
+      "description": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Rollback executed automatically. Canary 3/5 returned 500 on /cart."
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Deploy log attached in linked ticket."
+              }
+            ]
+          }
+        ]
+      },
+      "issuetype": {
+        "name": "Task"
+      },
+      "priority": {
+        "name": "High"
+      },
+      "status": {
+        "name": "Open"
+      },
+      "labels": [
+        "deploy",
+        "canary"
+      ],
+      "reporter": {
+        "displayName": "Grace Hopper"
+      },
+      "created": "2026-08-27T08:30:00.000+0700"
+    }
+  }
+}

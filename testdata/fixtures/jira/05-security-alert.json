@@ -1,0 +1,52 @@
+{
+  "timestamp": 1785000000000,
+  "webhookEvent": "jira:issue_created",
+  "issue": {
+    "id": 40407,
+    "key": "SEC-501",
+    "fields": {
+      "summary": "Suspicious IAM key usage from unrecognized region",
+      "description": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "GuardDuty finding: access key used from 203.0.113.44 (no prior history). Key belongs to ci-runner service account."
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Key quarantined pending review."
+              }
+            ]
+          }
+        ]
+      },
+      "issuetype": {
+        "name": "Security"
+      },
+      "priority": {
+        "name": "Highest"
+      },
+      "status": {
+        "name": "Open"
+      },
+      "labels": [
+        "security",
+        "iam"
+      ],
+      "reporter": {
+        "displayName": "Security Bot"
+      },
+      "created": "2026-08-27T08:30:00.000+0700"
+    }
+  }
+}

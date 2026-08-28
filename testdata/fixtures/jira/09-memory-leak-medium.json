@@ -1,0 +1,52 @@
+{
+  "timestamp": 1785000000000,
+  "webhookEvent": "jira:issue_created",
+  "issue": {
+    "id": 48815,
+    "key": "API-402",
+    "fields": {
+      "summary": "recommendation-service RSS growing 50MB/hour since v3.2.0",
+      "description": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Restarted at 4GB cap twice today. Heap profile captured, attached to runbook doc."
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Suspect new feature-cache; no deploy rollback possible (hard dependency)."
+              }
+            ]
+          }
+        ]
+      },
+      "issuetype": {
+        "name": "Bug"
+      },
+      "priority": {
+        "name": "Medium"
+      },
+      "status": {
+        "name": "Open"
+      },
+      "labels": [
+        "api",
+        "memory"
+      ],
+      "reporter": {
+        "displayName": "Grace Hopper"
+      },
+      "created": "2026-08-27T08:30:00.000+0700"
+    }
+  }
+}

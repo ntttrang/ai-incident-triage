@@ -8,8 +8,9 @@ K6 ?= k6
 BASE_URL ?= http://localhost:8085
 LOADTEST_VUS ?= 20
 LOADTEST_DURATION ?= 30s
+SEED_URL ?= http://localhost:8085
 
-.PHONY: help tidy build run test test-integration lint gosec govulncheck trivy migrate-up migrate-down up down logs docker-build loadtest loadtest-health
+.PHONY: help tidy build run test test-integration lint gosec govulncheck trivy migrate-up migrate-down up down logs docker-build loadtest loadtest-health seed
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
@@ -27,7 +28,7 @@ test: ## Run unit tests
 	$(GO) test ./... -count=1 -race -coverprofile=coverage.out -covermode=atomic
 
 test-integration: ## Run integration tests (requires Postgres; set TEST_DATABASE_URL)
-	$(GO) test ./... -tags=integration -count=1 -race -timeout 5m
+	$(GO) test -p 1 ./... -tags=integration -count=1 -race -timeout 5m
 
 lint: ## Run golangci-lint
 	golangci-lint run ./...
@@ -63,3 +64,6 @@ loadtest: loadtest-health ## Run k6 load test (override BASE_URL, LOADTEST_VUS, 
 
 loadtest-health: ## Smoke load test against /healthz
 	$(K6) run -e BASE_URL=$(BASE_URL) --vus $(LOADTEST_VUS) --duration $(LOADTEST_DURATION) loadtest/healthz.js
+
+seed: ## POST Jira fixtures through the real webhook (stack must be up)
+	$(GO) run ./cmd/seed -url $(SEED_URL)
