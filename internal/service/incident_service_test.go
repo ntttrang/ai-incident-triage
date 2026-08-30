@@ -14,10 +14,11 @@ import (
 	"github.com/ntttrang/ai-incident-triage/internal/service"
 )
 
-// fakeRepo records calls; the repository layer owns idempotency semantics and
-// is covered by its own integration suite.
-type fakeRepo struct {
-	upserted []*domain.Incident
+// fakeStore stands in for the ingest store (Receive) and repository (reads).
+// Idempotency semantics live in the postgres layer and are covered by its own
+// integration suite.
+type fakeStore struct {
+	received []*domain.Incident
 	outcome  domain.UpsertOutcome
 	err      error
 
@@ -25,8 +26,8 @@ type fakeRepo struct {
 	single *domain.Incident
 }
 
-func (f *fakeRepo) UpsertFromWebhook(_ context.Context, inc *domain.Incident) (domain.UpsertOutcome, error) {
-	f.upserted = append(f.upserted, inc)
+func (f *fakeStore) Receive(_ context.Context, inc *domain.Incident) (domain.UpsertOutcome, error) {
+	f.received = append(f.received, inc)
 	if f.err != nil {
 		return "", f.err
 	}
@@ -36,59 +37,65 @@ func (f *fakeRepo) UpsertFromWebhook(_ context.Context, inc *domain.Incident) (d
 	return f.outcome, nil
 }
 
-func (f *fakeRepo) List(_ context.Context, _ domain.IncidentFilter) ([]domain.Incident, error) {
+func (f *fakeStore) List(_ context.Context, _ domain.IncidentFilter) ([]domain.Incident, error) {
 	return f.list, nil
 }
 
-func (f *fakeRepo) GetByID(_ context.Context, _ uuid.UUID) (*domain.Incident, error) {
+func (f *fakeStore) GetByID(_ context.Context, _ uuid.UUID) (*domain.Incident, error) {
 	if f.single == nil {
 		return nil, domain.ErrNotFound
 	}
 	return f.single, nil
 }
 
-func newService(repo domain.IncidentRepository) *service.IncidentService {
-	return service.NewIncidentService(repo, logger.New("error"))
+func (f *fakeStore) SaveClassification(context.Context, uuid.UUID, *domain.Classification) error {
+	return nil
+}
+
+func (f *fakeStore) MarkFailed(context.Context, uuid.UUID) error { return nil }
+
+func newService(store *fakeStore) *service.IncidentService {
+	return service.NewIncidentService(store, store, logger.New("error"))
 }
 
 func TestReceiveIncidentReturnsOutcomeAndKeepsStatus(t *testing.T) {
-	repo := &fakeRepo{outcome: domain.UpsertCreated}
-	svc := newService(repo)
+	store := &fakeStore{outcome: domain.UpsertCreated}
+	svc := newService(store)
 
 	inc := &domain.Incident{Source: "jira", ExternalID: "OPS-1", Summary: "s", Status: domain.StatusReceived}
 	outcome, err := svc.ReceiveIncident(context.Background(), inc)
 
 	require.NoError(t, err)
 	assert.Equal(t, domain.UpsertCreated, outcome)
-	require.Len(t, repo.upserted, 1)
-	assert.Equal(t, "jira", repo.upserted[0].Source)
-	assert.NotEqual(t, uuid.Nil, repo.upserted[0].ID, "repo-assigned id flows back to caller")
+	require.Len(t, store.received, 1)
+	assert.Equal(t, "jira", store.received[0].Source)
+	assert.NotEqual(t, uuid.Nil, store.received[0].ID, "store-assigned id flows back to caller")
 }
 
 func TestReceiveIncidentDuplicateIsNotAnError(t *testing.T) {
-	svc := newService(&fakeRepo{outcome: domain.UpsertDuplicate})
+	svc := newService(&fakeStore{outcome: domain.UpsertDuplicate})
 
 	outcome, err := svc.ReceiveIncident(context.Background(), &domain.Incident{ExternalID: "OPS-1", Summary: "s"})
 	require.NoError(t, err)
 	assert.Equal(t, domain.UpsertDuplicate, outcome)
 }
 
-func TestReceiveIncidentPropagatesRepoError(t *testing.T) {
+func TestReceiveIncidentPropagatesStoreError(t *testing.T) {
 	boom := errors.New("db down")
-	svc := newService(&fakeRepo{err: boom})
+	svc := newService(&fakeStore{err: boom})
 
 	_, err := svc.ReceiveIncident(context.Background(), &domain.Incident{ExternalID: "OPS-1", Summary: "s"})
 	require.ErrorIs(t, err, boom)
 }
 
 func TestListAndGetDelegate(t *testing.T) {
-	repo := &fakeRepo{
+	store := &fakeStore{
 		list:   []domain.Incident{{ExternalID: "OPS-1", Summary: "s"}},
 		single: &domain.Incident{ExternalID: "OPS-2", Summary: "t"},
 	}
-	svc := newService(repo)
+	svc := newService(store)
 
-	got, err := svc.ListIncidents(context.Background(), domain.IncidentFilter{Status: "received"})
+	got, err := svc.ListIncidents(context.Background(), domain.IncidentFilter{Status: "queued"})
 	require.NoError(t, err)
 	assert.Len(t, got, 1)
 
@@ -96,7 +103,13 @@ func TestListAndGetDelegate(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "OPS-2", one.ExternalID)
 
-	repo.single = nil // subsequent lookups miss
+	store.single = nil // subsequent lookups miss
 	_, err = svc.GetIncident(context.Background(), uuid.New())
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 }
+
+// Compile-time proof that the fake satisfies both ports the service consumes.
+var (
+	_ domain.IncidentIngest     = (*fakeStore)(nil)
+	_ domain.IncidentRepository = (*fakeStore)(nil)
+)

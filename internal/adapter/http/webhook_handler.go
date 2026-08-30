@@ -86,10 +86,14 @@ func (h *WebhookHandler) ReceiveJira(c *gin.Context) {
 	}
 
 	switch outcome {
-	case domain.UpsertCreated:
-		c.JSON(http.StatusAccepted, WebhookResponse{Outcome: string(outcome), ID: &inc.ID, Status: string(domain.StatusReceived)})
-	case domain.UpsertUpdated:
-		c.JSON(http.StatusOK, WebhookResponse{Outcome: string(outcome), ID: &inc.ID, Status: string(domain.StatusReceived)})
+	case domain.UpsertCreated, domain.UpsertUpdated:
+		// The ingest transaction leaves the row queued for classification;
+		// mirroring that here keeps the response honest about persisted state.
+		code := http.StatusAccepted
+		if outcome == domain.UpsertUpdated {
+			code = http.StatusOK
+		}
+		c.JSON(code, WebhookResponse{Outcome: string(outcome), ID: &inc.ID, Status: string(domain.StatusQueued)})
 	default:
 		c.JSON(http.StatusOK, WebhookResponse{Outcome: string(domain.UpsertDuplicate)})
 	}

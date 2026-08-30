@@ -38,3 +38,5 @@ tmp/
 plans/
 # Stray root binaries
 /main
+/seed
+/worker

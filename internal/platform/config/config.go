@@ -25,6 +25,15 @@ type Config struct {
 	DBMinConns       int32
 	MigrationsPath   string
 	WebhookSecret    string
+
+	// Classification (worker). An empty OpenAI API key is allowed: the
+	// resilient classifier then degrades to the heuristic fallback on every
+	// job, which is the documented no-credential demo mode.
+	OpenAIAPIKey      string
+	OpenAIModel       string
+	OpenAITimeoutSecs int
+	ClassifyForceFail string
+	WorkerMetricsPort string
 }
 
 // TracingEnabled reports whether an OTLP endpoint is configured.
@@ -68,6 +77,20 @@ func Load() (*Config, error) {
 	if cfg.WebhookSecret == "" {
 		return nil, fmt.Errorf("WEBHOOK_SECRET must be set (see .env.example)")
 	}
+
+	cfg.OpenAIAPIKey = os.Getenv("OPENAI_API_KEY")
+	cfg.OpenAIModel = getEnv("OPENAI_MODEL", "gpt-5-chat-latest")
+	cfg.OpenAITimeoutSecs = getEnvInt("OPENAI_TIMEOUT_SECS", 60)
+	if cfg.OpenAITimeoutSecs <= 0 {
+		return nil, fmt.Errorf("OPENAI_TIMEOUT_SECS must be positive")
+	}
+	cfg.ClassifyForceFail = os.Getenv("CLASSIFY_FORCE_FAIL")
+	switch cfg.ClassifyForceFail {
+	case "", "llm", "heuristic", "all":
+	default:
+		return nil, fmt.Errorf("invalid CLASSIFY_FORCE_FAIL %q (want llm, heuristic, all, or empty)", cfg.ClassifyForceFail)
+	}
+	cfg.WorkerMetricsPort = getEnv("WORKER_METRICS_PORT", "8086")
 
 	return cfg, nil
 }

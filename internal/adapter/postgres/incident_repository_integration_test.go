@@ -55,7 +55,8 @@ func TestMain(m *testing.M) {
 
 func truncate(t *testing.T) {
 	t.Helper()
-	_, err := pool.Exec(context.Background(), "TRUNCATE incidents")
+	// river_job too: enqueue assertions must not see jobs from earlier tests.
+	_, err := pool.Exec(context.Background(), "TRUNCATE incidents, river_job")
 	require.NoError(t, err)
 }
 
@@ -83,6 +84,14 @@ func countIncidents(t *testing.T) int {
 	return n
 }
 
+func countJobs(t *testing.T) int {
+	t.Helper()
+	var n int
+	require.NoError(t, pool.QueryRow(context.Background(),
+		"SELECT count(*) FROM river_job WHERE kind = 'classify_incident'").Scan(&n))
+	return n
+}
+
 func rowState(t *testing.T, key string) (updatedAt time.Time, delivery *string, summary string, raw string) {
 	t.Helper()
 	require.NoError(t, pool.QueryRow(context.Background(),
@@ -93,102 +102,12 @@ func rowState(t *testing.T, key string) (updatedAt time.Time, delivery *string, 
 
 func strptr(s string) *string { return &s }
 
-func TestUpsertCreated(t *testing.T) {
+func TestGetByIDNotFound(t *testing.T) {
 	truncate(t)
 	repo := postgres.NewIncidentRepository(pool)
-	ctx := context.Background()
 
-	inc := incident("OPS-1", "d-1", "db down")
-	outcome, err := repo.UpsertFromWebhook(ctx, inc)
-	require.NoError(t, err)
-	assert.Equal(t, domain.UpsertCreated, outcome)
-	require.NotEqual(t, uuid.Nil, inc.ID, "insert must return the row id")
-	assert.Equal(t, 1, countIncidents(t))
-
-	got, err := repo.GetByID(ctx, inc.ID)
-	require.NoError(t, err)
-	assert.Equal(t, "db down", got.Summary)
-	assert.Equal(t, domain.StatusReceived, got.Status)
-	assert.NotNil(t, got.LastDeliveryID)
-}
-
-func TestUpsertDuplicateWritesNothing(t *testing.T) {
-	truncate(t)
-	repo := postgres.NewIncidentRepository(pool)
-	ctx := context.Background()
-
-	_, err := repo.UpsertFromWebhook(ctx, incident("OPS-1", "d-1", "db down"))
-	require.NoError(t, err)
-	beforeUpdate, beforeDelivery, beforeSummary, beforeRaw := rowState(t, "OPS-1")
-
-	time.Sleep(10 * time.Millisecond) // updated_at would move if a write happened
-
-	outcome, err := repo.UpsertFromWebhook(ctx, incident("OPS-1", "d-1", "db down CHANGED"))
-	require.NoError(t, err)
-	assert.Equal(t, domain.UpsertDuplicate, outcome)
-
-	afterUpdate, afterDelivery, afterSummary, afterRaw := rowState(t, "OPS-1")
-	assert.True(t, beforeUpdate.Equal(afterUpdate), "duplicate must not touch updated_at")
-	assert.Equal(t, beforeDelivery, afterDelivery)
-	assert.Equal(t, beforeSummary, afterSummary)
-	assert.Equal(t, beforeRaw, afterRaw)
-	assert.Equal(t, 1, countIncidents(t))
-}
-
-func TestUpsertUpdatedRefreshesRow(t *testing.T) {
-	truncate(t)
-	repo := postgres.NewIncidentRepository(pool)
-	ctx := context.Background()
-
-	_, err := repo.UpsertFromWebhook(ctx, incident("OPS-1", "d-1", "db down"))
-	require.NoError(t, err)
-
-	outcome, err := repo.UpsertFromWebhook(ctx, incident("OPS-1", "d-2", "db recovering"))
-	require.NoError(t, err)
-	assert.Equal(t, domain.UpsertUpdated, outcome)
-
-	_, delivery, summary, raw := rowState(t, "OPS-1")
-	require.NotNil(t, delivery)
-	assert.Equal(t, "d-2", *delivery)
-	assert.Equal(t, "db recovering", summary)
-	// JSONB re-serializes with canonical spacing; compare semantically.
-	assert.JSONEq(t, `{"issue":{"key":"OPS-1","summary":"db recovering"}}`, raw, "update must refresh the stored raw body")
-	assert.Equal(t, 1, countIncidents(t), "update must not create a second row")
-}
-
-func TestUpsertWithoutDeliveryHeader(t *testing.T) {
-	truncate(t)
-	repo := postgres.NewIncidentRepository(pool)
-	ctx := context.Background()
-
-	outcome, err := repo.UpsertFromWebhook(ctx, incident("OPS-1", "", "db down"))
-	require.NoError(t, err)
-	assert.Equal(t, domain.UpsertCreated, outcome)
-
-	// NULLs are ignored by the delivery unique constraint, so a headerless
-	// delivery inserts; a second headerless delivery of the same body cannot be
-	// distinguished from a replay and is treated as a duplicate.
-	outcome, err = repo.UpsertFromWebhook(ctx, incident("OPS-1", "", "db down"))
-	require.NoError(t, err)
-	assert.Equal(t, domain.UpsertDuplicate, outcome)
-
-	// A later delivery WITH a header still updates the row.
-	outcome, err = repo.UpsertFromWebhook(ctx, incident("OPS-1", "d-9", "db down"))
-	require.NoError(t, err)
-	assert.Equal(t, domain.UpsertUpdated, outcome)
-}
-
-func TestUpsertDeliveryIDCollisionConflicts(t *testing.T) {
-	truncate(t)
-	repo := postgres.NewIncidentRepository(pool)
-	ctx := context.Background()
-
-	_, err := repo.UpsertFromWebhook(ctx, incident("OPS-1", "shared-delivery", "a"))
-	require.NoError(t, err)
-
-	_, err = repo.UpsertFromWebhook(ctx, incident("OPS-2", "shared-delivery", "b"))
-	require.Error(t, err)
-	assert.ErrorIs(t, err, domain.ErrConflict)
+	_, err := repo.GetByID(context.Background(), uuid.New())
+	require.ErrorIs(t, err, domain.ErrNotFound)
 }
 
 func TestListFiltersAndOrder(t *testing.T) {
@@ -204,8 +123,8 @@ func TestListFiltersAndOrder(t *testing.T) {
 		created  string
 	}{
 		{"OPS-old", "classified", strptr("critical"), "2026-08-25T10:00:00Z"},
-		{"OPS-mid", "received", nil, "2026-08-26T10:00:00Z"},
-		{"OPS-new", "received", strptr("high"), "2026-08-27T10:00:00Z"},
+		{"OPS-mid", "queued", nil, "2026-08-26T10:00:00Z"},
+		{"OPS-new", "queued", strptr("high"), "2026-08-27T10:00:00Z"},
 	} {
 		_, err := pool.Exec(ctx, seed, row.key, row.status, row.severity, row.created)
 		require.NoError(t, err)
@@ -213,7 +132,7 @@ func TestListFiltersAndOrder(t *testing.T) {
 
 	repo := postgres.NewIncidentRepository(pool)
 
-	got, err := repo.List(ctx, domain.IncidentFilter{Status: "received"})
+	got, err := repo.List(ctx, domain.IncidentFilter{Status: "queued"})
 	require.NoError(t, err)
 	require.Len(t, got, 2)
 	assert.Equal(t, "OPS-new", got[0].ExternalID, "newest first")
@@ -238,10 +157,92 @@ func TestListFiltersAndOrder(t *testing.T) {
 	assert.Len(t, got, 3)
 }
 
-func TestGetByIDNotFound(t *testing.T) {
+func TestSaveClassificationStoresVerdict(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+	repo := postgres.NewIncidentRepository(pool)
+
+	var id uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO incidents (source, external_id, summary, raw, status)
+		 VALUES ('jira', 'OPS-1', 'db down', '{}'::jsonb, 'queued') RETURNING id`,
+	).Scan(&id))
+
+	cls := &domain.Classification{
+		Category:      "database",
+		Severity:      "critical",
+		PriorityScore: 85,
+		Confidence:    0.9,
+		Rationale:     "summary says database down",
+		Source:        domain.ClassifySourceHeuristic,
+	}
+	require.NoError(t, repo.SaveClassification(ctx, id, cls))
+
+	got, err := repo.GetByID(ctx, id)
+	require.NoError(t, err)
+	require.Equal(t, domain.StatusClassified, got.Status)
+	require.NotNil(t, got.Category)
+	assert.Equal(t, "database", *got.Category)
+	require.NotNil(t, got.Severity)
+	assert.Equal(t, "critical", *got.Severity)
+	require.NotNil(t, got.PriorityScore)
+	assert.Equal(t, 85, *got.PriorityScore)
+	require.NotNil(t, got.ClassificationSource)
+	assert.Equal(t, domain.ClassifySourceHeuristic, *got.ClassificationSource)
+	require.NotNil(t, got.ClassifiedAt, "classified_at must be stamped by the write")
+}
+
+func TestSaveClassificationRejectsUnknownVocabulary(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+
+	var id uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO incidents (source, external_id, summary, raw, status)
+		 VALUES ('jira', 'OPS-1', 's', '{}'::jsonb, 'queued') RETURNING id`,
+	).Scan(&id))
+
+	repo := postgres.NewIncidentRepository(pool)
+
+	err := repo.SaveClassification(ctx, id, &domain.Classification{Category: " vibes", Severity: "critical"})
+	require.ErrorIs(t, err, domain.ErrInvalidInput)
+
+	err = repo.SaveClassification(ctx, id, &domain.Classification{Category: "database", Severity: "ultra"})
+	require.ErrorIs(t, err, domain.ErrInvalidInput)
+
+	// The rejected writes must have left the row untouched.
+	got, err := repo.GetByID(ctx, id)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusQueued, got.Status)
+	assert.Nil(t, got.Category)
+}
+
+func TestSaveClassificationNotFound(t *testing.T) {
 	truncate(t)
 	repo := postgres.NewIncidentRepository(pool)
 
-	_, err := repo.GetByID(context.Background(), uuid.New())
+	cls := &domain.Classification{Category: "database", Severity: "low"}
+	err := repo.SaveClassification(context.Background(), uuid.New(), cls)
+	require.ErrorIs(t, err, domain.ErrNotFound)
+}
+
+func TestMarkFailedFlipsStatus(t *testing.T) {
+	truncate(t)
+	ctx := context.Background()
+
+	var id uuid.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO incidents (source, external_id, summary, raw, status)
+		 VALUES ('jira', 'OPS-1', 's', '{}'::jsonb, 'queued') RETURNING id`,
+	).Scan(&id))
+
+	repo := postgres.NewIncidentRepository(pool)
+	require.NoError(t, repo.MarkFailed(ctx, id))
+
+	got, err := repo.GetByID(ctx, id)
+	require.NoError(t, err)
+	assert.Equal(t, domain.StatusFailed, got.Status)
+
+	err = repo.MarkFailed(ctx, uuid.New())
 	require.ErrorIs(t, err, domain.ErrNotFound)
 }

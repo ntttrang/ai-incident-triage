@@ -10,7 +10,7 @@ LOADTEST_VUS ?= 20
 LOADTEST_DURATION ?= 30s
 SEED_URL ?= http://localhost:8085
 
-.PHONY: help tidy build run test test-integration lint gosec govulncheck trivy migrate-up migrate-down up down logs docker-build loadtest loadtest-health seed
+.PHONY: help tidy build run test test-integration lint gosec govulncheck trivy migrate-up migrate-down up down logs docker-build loadtest loadtest-health seed run-worker reset-seed
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
@@ -67,3 +67,13 @@ loadtest-health: ## Smoke load test against /healthz
 
 seed: ## POST Jira fixtures through the real webhook (stack must be up)
 	$(GO) run ./cmd/seed -url $(SEED_URL)
+
+run-worker: ## Run the classification worker locally against the compose DB
+	$(GO) run ./cmd/worker
+
+reset-seed: ## Reset volumes, rebuild, start the stack, wait healthy, reseed
+	docker compose down -v --remove-orphans
+	docker compose up --build -d
+	@until curl -sf http://localhost:8085/healthz >/dev/null 2>&1; do sleep 2; done
+	@echo "stack healthy"
+	$(GO) run ./cmd/seed

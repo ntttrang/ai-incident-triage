@@ -1,6 +1,8 @@
 package metrics
 
 import (
+	"time"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -8,13 +10,15 @@ import (
 
 // Metrics holds Prometheus collectors for the application.
 type Metrics struct {
-	HTTPRequestsTotal   *prometheus.CounterVec
-	HTTPRequestDuration *prometheus.HistogramVec
-	DBPoolAcquired      prometheus.Gauge
-	DBPoolIdle          prometheus.Gauge
-	DBPoolTotal         prometheus.Gauge
-	DBPoolMax           prometheus.Gauge
-	Registry            *prometheus.Registry
+	HTTPRequestsTotal      *prometheus.CounterVec
+	HTTPRequestDuration    *prometheus.HistogramVec
+	ClassificationTotal    *prometheus.CounterVec
+	ClassificationDuration *prometheus.HistogramVec
+	DBPoolAcquired         prometheus.Gauge
+	DBPoolIdle             prometheus.Gauge
+	DBPoolTotal            prometheus.Gauge
+	DBPoolMax              prometheus.Gauge
+	Registry               *prometheus.Registry
 }
 
 // New registers and returns application metrics on a dedicated registry.
@@ -58,6 +62,21 @@ func New() *Metrics {
 			Name: "db_pool_max_connections",
 			Help: "Maximum number of database connections allowed",
 		}),
+		ClassificationTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "classification_total",
+				Help: "Classification attempts by source (llm|heuristic) and severity",
+			},
+			[]string{"source", "severity"},
+		),
+		ClassificationDuration: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "classification_duration_seconds",
+				Help:    "Classification wall-clock duration by source",
+				Buckets: []float64{0.01, 0.05, 0.1, 0.5, 1, 2.5, 5, 10, 30, 60, 120},
+			},
+			[]string{"source"},
+		),
 	}
 
 	reg.MustRegister(
@@ -67,8 +86,19 @@ func New() *Metrics {
 		m.DBPoolIdle,
 		m.DBPoolTotal,
 		m.DBPoolMax,
+		m.ClassificationTotal,
+		m.ClassificationDuration,
 	)
 	return m
+}
+
+// ObserveClassification implements service.ClassifyObserver.
+func (m *Metrics) ObserveClassification(source string, severity string, duration time.Duration) {
+	if m == nil {
+		return
+	}
+	m.ClassificationTotal.WithLabelValues(source, severity).Inc()
+	m.ClassificationDuration.WithLabelValues(source).Observe(duration.Seconds())
 }
 
 // ObserveDBPool updates gauges from a pgx pool snapshot.

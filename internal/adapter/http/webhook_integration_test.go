@@ -28,6 +28,7 @@ import (
 
 	httpadapter "github.com/ntttrang/ai-incident-triage/internal/adapter/http"
 	postgresadapter "github.com/ntttrang/ai-incident-triage/internal/adapter/postgres"
+	queueadapter "github.com/ntttrang/ai-incident-triage/internal/adapter/queue"
 	"github.com/ntttrang/ai-incident-triage/internal/platform/logger"
 	"github.com/ntttrang/ai-incident-triage/internal/platform/metrics"
 	"github.com/ntttrang/ai-incident-triage/internal/service"
@@ -71,8 +72,13 @@ func newServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	truncate(t)
 
+	// Wire the real ingest path: the webhook handler goes through the service
+	// to the IngestStore, which enqueues classify jobs transactionally.
+	riverClient, err := queueadapter.NewInsertClient(pool)
+	require.NoError(t, err)
+	ingest := postgresadapter.NewIngestStore(pool, queueadapter.NewEnqueuer(riverClient))
 	repo := postgresadapter.NewIncidentRepository(pool)
-	svc := service.NewIncidentService(repo, logger.New("error"))
+	svc := service.NewIncidentService(ingest, repo, logger.New("error"))
 	log := logger.New("error")
 
 	r := httpadapter.NewRouter(httpadapter.Dependencies{
@@ -90,7 +96,7 @@ func newServer(t *testing.T) *httptest.Server {
 
 func truncate(t *testing.T) {
 	t.Helper()
-	_, err := pool.Exec(context.Background(), "TRUNCATE incidents")
+	_, err := pool.Exec(context.Background(), "TRUNCATE incidents, river_job")
 	require.NoError(t, err)
 }
 
@@ -164,7 +170,7 @@ func TestWebhookIngestLifecycle(t *testing.T) {
 	first := incidents[0].(map[string]any)
 	assert.NotContains(t, first, "raw")
 	assert.Equal(t, "Prod db recovering", first["summary"], "update refreshed the projection")
-	assert.Equal(t, "received", first["status"])
+	assert.Equal(t, "queued", first["status"])
 
 	code, payload = do(t, client, signedRequest(t, http.MethodGet, server.URL+"/api/v1/incidents/"+incidentID, nil, ""))
 	require.Equal(t, http.StatusOK, code)
@@ -286,7 +292,7 @@ func TestIncidentListFilterValidation(t *testing.T) {
 	assert.Equal(t, http.StatusOK, code)
 
 	// Valid filter on an empty table -> empty page, not null.
-	code, payload := do(t, client, signedRequest(t, http.MethodGet, server.URL+"/api/v1/incidents?status=received", nil, ""))
+	code, payload := do(t, client, signedRequest(t, http.MethodGet, server.URL+"/api/v1/incidents?status=queued", nil, ""))
 	require.Equal(t, http.StatusOK, code)
 	assert.Equal(t, float64(0), payload["count"])
 	incidents, ok := payload["incidents"].([]any)

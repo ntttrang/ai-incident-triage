@@ -38,7 +38,7 @@ func TestParseJiraEventFullProjection(t *testing.T) {
 	assert.Equal(t, "Highest", inc.Priority)
 	assert.Equal(t, []string{"prod", "db"}, inc.Labels)
 	assert.Equal(t, "Grace Hopper", inc.Reporter)
-	assert.Equal(t, domain.StatusReceived, inc.Status)
+	assert.Empty(t, inc.Status, "initial status is the ingest transaction's decision, not the parser's")
 	assert.Equal(t, body, inc.Raw, "verbatim body must be kept in Raw")
 	assert.Nil(t, inc.LastDeliveryID, "delivery id comes from the header, not the body")
 }
