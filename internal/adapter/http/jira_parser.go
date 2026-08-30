@@ -72,15 +72,17 @@ func parseJiraEvent(body []byte) (*domain.Incident, error) {
 	}
 
 	return &domain.Incident{
-		Source:         "jira",
-		ExternalID:     event.Issue.Key,
-		Summary:        event.Issue.Fields.Summary,
-		Description:    descriptionText(event.Issue.Fields.Description),
-		IssueType:      event.Issue.Fields.IssueType.Name,
-		Priority:       event.Issue.Fields.Priority.Name,
-		Labels:         labels,
-		Reporter:       event.Issue.Fields.Reporter.DisplayName,
-		Status:         domain.StatusReceived,
+		Source:      "jira",
+		ExternalID:  event.Issue.Key,
+		Summary:     event.Issue.Fields.Summary,
+		Description: descriptionText(event.Issue.Fields.Description),
+		IssueType:   event.Issue.Fields.IssueType.Name,
+		Priority:    event.Issue.Fields.Priority.Name,
+		Labels:      labels,
+		Reporter:    event.Issue.Fields.Reporter.DisplayName,
+		// Status stays zero here on purpose: the ingest transaction is what
+		// decides initial state ('queued'), so a parsed value would be
+		// silently discarded anyway.
 		Raw:            body,
 		LastDeliveryID: nil, // set by the handler from the delivery header
 	}, nil

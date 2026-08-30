@@ -10,7 +10,8 @@ import (
 type IncidentStatus string
 
 const (
-	// StatusReceived is set when a webhook delivery creates the row.
+	// StatusReceived predates transactional enqueue: rows now start life as
+	// StatusQueued. Retained for read compatibility with pre-phase-3 data.
 	StatusReceived IncidentStatus = "received"
 	// StatusQueued is set when classification is enqueued (Phase 3).
 	StatusQueued IncidentStatus = "queued"
@@ -53,14 +54,16 @@ type Incident struct {
 	Raw            []byte  // full webhook body, stored for debugging; never returned by the read API
 	LastDeliveryID *string // X-Atlassian-Webhook-Identifier; nil when the header is absent
 
-	// Classification result (Phase 3).
-	Category         *string
-	Severity         *string
-	PriorityScore    *int
-	Confidence       *float64
-	Rationale        *string
-	SuggestedRunbook *string
-	ClassifiedAt     *time.Time
+	// Classification result (Phase 3). Reset to nil whenever a new delivery
+	// re-enqueues classification.
+	Category             *string
+	Severity             *string
+	PriorityScore        *int
+	Confidence           *float64
+	Rationale            *string
+	SuggestedRunbook     *string
+	ClassificationSource *string
+	ClassifiedAt         *time.Time
 
 	CreatedAt time.Time
 	UpdatedAt time.Time

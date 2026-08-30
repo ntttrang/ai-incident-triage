@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/ntttrang/ai-incident-triage/internal/domain"
@@ -21,7 +20,7 @@ const incidentColumns = `
 	id, source, external_id, summary, description, issue_type, priority,
 	labels, reporter, status, last_delivery_id,
 	category, severity, priority_score, confidence, rationale, suggested_runbook,
-	classified_at, created_at, updated_at`
+	classification_source, classified_at, created_at, updated_at`
 
 // IncidentRepository stores incidents via a pgx connection pool.
 type IncidentRepository struct {
@@ -33,59 +32,52 @@ func NewIncidentRepository(pool *pgxpool.Pool) *IncidentRepository {
 	return &IncidentRepository{pool: pool}
 }
 
-// UpsertFromWebhook implements two-level idempotency in one statement:
-//
-//   - new issue                      -> INSERT, returns UpsertCreated
-//   - existing issue, new delivery   -> DO UPDATE, returns UpsertUpdated
-//   - existing issue, same delivery  -> WHERE excludes the row, no row
-//     returned, returns UpsertDuplicate with zero writes
-//
-// "xmax = 0" is the Postgres idiom distinguishing a fresh INSERT (xmax = 0)
-// from a row updated by the current transaction (xmax = txid).
-func (r *IncidentRepository) UpsertFromWebhook(ctx context.Context, inc *domain.Incident) (domain.UpsertOutcome, error) {
+// SaveClassification stores the verdict and flips the row to classified.
+// Unknown categories/severities are rejected so a hallucinating model cannot
+// poison filter indexes with one-off values.
+func (r *IncidentRepository) SaveClassification(ctx context.Context, id uuid.UUID, cls *domain.Classification) error {
+	if !domain.KnownCategory(cls.Category) || !domain.KnownSeverity(cls.Severity) {
+		return fmt.Errorf("save classification %s: %w (category=%q severity=%q)", id, domain.ErrInvalidInput, cls.Category, cls.Severity)
+	}
 	const q = `
-		INSERT INTO incidents (
-			source, external_id, summary, description, issue_type, priority,
-			labels, reporter, status, raw, last_delivery_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11)
-		ON CONFLICT (source, external_id) DO UPDATE SET
-			summary          = EXCLUDED.summary,
-			description      = EXCLUDED.description,
-			issue_type       = EXCLUDED.issue_type,
-			priority         = EXCLUDED.priority,
-			labels           = EXCLUDED.labels,
-			reporter         = EXCLUDED.reporter,
-			raw              = EXCLUDED.raw,
-			last_delivery_id = EXCLUDED.last_delivery_id,
-			updated_at       = now()
-		WHERE incidents.last_delivery_id IS DISTINCT FROM EXCLUDED.last_delivery_id
-		RETURNING id, (xmax = 0) AS created`
-
-	var id uuid.UUID
-	var created bool
-	err := r.pool.QueryRow(ctx, q,
-		inc.Source, inc.ExternalID, inc.Summary, inc.Description, inc.IssueType,
-		inc.Priority, inc.Labels, inc.Reporter, string(inc.Status), string(inc.Raw),
-		inc.LastDeliveryID,
-	).Scan(&id, &created)
+		UPDATE incidents SET
+			category = $2,
+			severity = $3,
+			priority_score = $4,
+			confidence = $5,
+			rationale = $6,
+			suggested_runbook = $7,
+			classification_source = $8,
+			classified_at = now(),
+			status = 'classified',
+			updated_at = now()
+		WHERE id = $1`
+	tag, err := r.pool.Exec(ctx, q,
+		id, cls.Category, cls.Severity, cls.PriorityScore, cls.Confidence,
+		cls.Rationale, cls.SuggestedRunbook, cls.Source,
+	)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return domain.UpsertDuplicate, nil
-		}
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			// The only unhandled unique index is (source, last_delivery_id):
-			// a delivery identifier reused by a different issue.
-			return "", fmt.Errorf("upsert incident: %w", domain.ErrConflict)
-		}
-		return "", fmt.Errorf("upsert incident: %w", err)
+		return fmt.Errorf("save classification: %w", err)
 	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("save classification %s: %w", id, domain.ErrNotFound)
+	}
+	return nil
+}
 
-	inc.ID = id
-	if created {
-		return domain.UpsertCreated, nil
+// MarkFailed records that classification exhausted its retries.
+func (r *IncidentRepository) MarkFailed(ctx context.Context, id uuid.UUID) error {
+	const q = `
+		UPDATE incidents SET status = 'failed', updated_at = now()
+		WHERE id = $1`
+	tag, err := r.pool.Exec(ctx, q, id)
+	if err != nil {
+		return fmt.Errorf("mark failed: %w", err)
 	}
-	return domain.UpsertUpdated, nil
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("mark failed %s: %w", id, domain.ErrNotFound)
+	}
+	return nil
 }
 
 // List returns incidents matching the filter, newest first, without raw bodies.
@@ -153,7 +145,8 @@ func scanIncident(row pgx.Row) (*domain.Incident, error) {
 		&inc.ID, &inc.Source, &inc.ExternalID, &inc.Summary, &inc.Description,
 		&inc.IssueType, &inc.Priority, &inc.Labels, &inc.Reporter, &status,
 		&inc.LastDeliveryID, &inc.Category, &inc.Severity, &inc.PriorityScore,
-		&inc.Confidence, &inc.Rationale, &inc.SuggestedRunbook, &inc.ClassifiedAt,
+		&inc.Confidence, &inc.Rationale, &inc.SuggestedRunbook,
+		&inc.ClassificationSource, &inc.ClassifiedAt,
 		&inc.CreatedAt, &inc.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {

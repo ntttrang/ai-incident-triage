@@ -16,6 +16,7 @@ import (
 
 	httpadapter "github.com/ntttrang/ai-incident-triage/internal/adapter/http"
 	postgresadapter "github.com/ntttrang/ai-incident-triage/internal/adapter/postgres"
+	queueadapter "github.com/ntttrang/ai-incident-triage/internal/adapter/queue"
 	"github.com/ntttrang/ai-incident-triage/internal/platform/config"
 	"github.com/ntttrang/ai-incident-triage/internal/platform/database"
 	"github.com/ntttrang/ai-incident-triage/internal/platform/logger"
@@ -85,7 +86,15 @@ func run() error {
 	go collectDBPoolMetrics(pool, m)
 
 	incidentRepo := postgresadapter.NewIncidentRepository(pool)
-	incidentSvc := service.NewIncidentService(incidentRepo, log)
+
+	// Insert-only River client: the API never consumes jobs, it only enqueues
+	// them inside ingest transactions.
+	riverClient, err := queueadapter.NewInsertClient(pool)
+	if err != nil {
+		return fmt.Errorf("queue client: %w", err)
+	}
+	ingestStore := postgresadapter.NewIngestStore(pool, queueadapter.NewEnqueuer(riverClient))
+	incidentSvc := service.NewIncidentService(ingestStore, incidentRepo, log)
 
 	router := httpadapter.NewRouter(httpadapter.Dependencies{
 		Log:         log,

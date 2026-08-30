@@ -56,6 +56,48 @@ services:
       retries: 5
       start_period: 10s
 
+  # Same image as app, different entrypoint. The Dockerfile's exec-form
+  # ENTRYPOINT ["./api"]-style directive makes compose `command:` an ARGUMENT
+  # to the api binary — overriding the entrypoint (not the command) is what
+  # actually runs the worker binary.
+  worker:
+    build: .
+    entrypoint: ["/app/worker"]
+    # Match the binary's graceful-stop budget (JobTimeout 150s + 30s margin):
+    # without this, compose SIGKILLs after ~10s and in-flight classification
+    # jobs can only recover via River's orphan rescue.
+    stop_grace_period: 185s
+    environment:
+      APP_ENV: development
+      LOG_LEVEL: info
+      OTEL_SERVICE_NAME: ai-incident-triage-worker
+      SERVICE_VERSION: "1.0.0"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: ai_incident_triage
+      DB_SSLMODE: disable
+      MIGRATIONS_PATH: file:///app/migrations
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-webhook-secret-change-me}
+      # Empty key is valid: every incident then classifies via the heuristic
+      # fallback (documented no-credential demo mode).
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5-chat-latest}
+      # Test/demo knob: llm | heuristic | all, unset in real environments.
+      CLASSIFY_FORCE_FAIL: ${CLASSIFY_FORCE_FAIL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8086/metrics >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.17.1
     environment:
