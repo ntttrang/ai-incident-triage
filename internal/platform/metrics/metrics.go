@@ -14,6 +14,11 @@ type Metrics struct {
 	HTTPRequestDuration    *prometheus.HistogramVec
 	ClassificationTotal    *prometheus.CounterVec
 	ClassificationDuration *prometheus.HistogramVec
+	IncidentsReceived      *prometheus.CounterVec
+	LLMRequestDuration     *prometheus.HistogramVec
+	LLMTokensTotal         *prometheus.CounterVec
+	LLMFallbackTrips       prometheus.Counter
+	ClassifyJobsFailed     prometheus.Counter
 	DBPoolAcquired         prometheus.Gauge
 	DBPoolIdle             prometheus.Gauge
 	DBPoolTotal            prometheus.Gauge
@@ -77,6 +82,40 @@ func New() *Metrics {
 			},
 			[]string{"source"},
 		),
+		IncidentsReceived: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "incidents_received_total",
+				Help: "Webhook deliveries accepted for ingest by outcome (created|updated|duplicate)",
+			},
+			[]string{"outcome"},
+		),
+		LLMRequestDuration: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "llm_request_duration_seconds",
+				Help:    "OpenAI request latency by model and outcome — the timeout story needs the failing tail",
+				Buckets: []float64{0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60},
+			},
+			[]string{"model", "outcome"},
+		),
+		LLMTokensTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "llm_tokens_total",
+				Help: "Tokens consumed by the classifier by model and type (prompt|completion)",
+			},
+			[]string{"model", "type"},
+		),
+		LLMFallbackTrips: prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Name: "llm_fallback_trips_total",
+				Help: "Classifications served by the heuristic fallback after an LLM failure",
+			},
+		),
+		ClassifyJobsFailed: prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Name: "classify_jobs_failed_total",
+				Help: "Incidents marked failed after classification exhausted its retries",
+			},
+		),
 	}
 
 	reg.MustRegister(
@@ -88,6 +127,11 @@ func New() *Metrics {
 		m.DBPoolMax,
 		m.ClassificationTotal,
 		m.ClassificationDuration,
+		m.IncidentsReceived,
+		m.LLMRequestDuration,
+		m.LLMTokensTotal,
+		m.LLMFallbackTrips,
+		m.ClassifyJobsFailed,
 	)
 	return m
 }
@@ -99,6 +143,51 @@ func (m *Metrics) ObserveClassification(source string, severity string, duration
 	}
 	m.ClassificationTotal.WithLabelValues(source, severity).Inc()
 	m.ClassificationDuration.WithLabelValues(source).Observe(duration.Seconds())
+}
+
+// ObserveClassificationFailure implements the extended service.ClassifyObserver.
+func (m *Metrics) ObserveClassificationFailure() {
+	if m == nil {
+		return
+	}
+	m.ClassifyJobsFailed.Inc()
+}
+
+// ObserveIngest implements the http adapter's IngestObserver.
+func (m *Metrics) ObserveIngest(outcome string) {
+	if m == nil {
+		return
+	}
+	m.IncidentsReceived.WithLabelValues(outcome).Inc()
+}
+
+// ObserveLLMRequest implements llm.Observer: request latency by model and
+// outcome — the timeout story needs the failing tail.
+func (m *Metrics) ObserveLLMRequest(model string, duration time.Duration, failed bool) {
+	if m == nil {
+		return
+	}
+	outcome := "success"
+	if failed {
+		outcome = "failed"
+	}
+	m.LLMRequestDuration.WithLabelValues(model, outcome).Observe(duration.Seconds())
+}
+
+// ObserveLLMTokens implements llm.Observer.
+func (m *Metrics) ObserveLLMTokens(model, tokenType string, count int64) {
+	if m == nil {
+		return
+	}
+	m.LLMTokensTotal.WithLabelValues(model, tokenType).Add(float64(count))
+}
+
+// ObserveFallbackTrip implements llm.Observer.
+func (m *Metrics) ObserveFallbackTrip() {
+	if m == nil {
+		return
+	}
+	m.LLMFallbackTrips.Inc()
 }
 
 // ObserveDBPool updates gauges from a pgx pool snapshot.

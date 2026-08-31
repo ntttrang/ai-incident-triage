@@ -29,16 +29,24 @@ const signatureHeader = "X-Hub-Signature"
 // caller could force unbounded allocations ahead of signature checking.
 const maxWebhookBodyBytes = 1 << 20 // 1 MiB
 
+// IngestObserver receives ingest outcome telemetry. platform/metrics
+// implements it; a nil observer is allowed so tests stay dependency-free.
+type IngestObserver interface {
+	ObserveIngest(outcome string)
+}
+
 // WebhookHandler receives issue-tracker webhooks.
 type WebhookHandler struct {
-	svc    *service.IncidentService
-	secret []byte
-	log    *slog.Logger
+	svc     *service.IncidentService
+	secret  []byte
+	log     *slog.Logger
+	observe IngestObserver
 }
 
 // NewWebhookHandler returns a handler verifying bodies with the shared secret.
-func NewWebhookHandler(svc *service.IncidentService, secret string, log *slog.Logger) *WebhookHandler {
-	return &WebhookHandler{svc: svc, secret: []byte(secret), log: log}
+// observer may be nil.
+func NewWebhookHandler(svc *service.IncidentService, secret string, log *slog.Logger, observer IngestObserver) *WebhookHandler {
+	return &WebhookHandler{svc: svc, secret: []byte(secret), log: log, observe: observer}
 }
 
 // ReceiveJira verifies and stores one Jira webhook delivery.
@@ -83,6 +91,10 @@ func (h *WebhookHandler) ReceiveJira(c *gin.Context) {
 	if err != nil {
 		mapError(c, h.log, err)
 		return
+	}
+
+	if h.observe != nil {
+		h.observe.ObserveIngest(string(outcome))
 	}
 
 	switch outcome {

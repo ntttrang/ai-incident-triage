@@ -47,15 +47,9 @@ func Init(ctx context.Context, cfg Config) (ShutdownFunc, error) {
 		return nil, fmt.Errorf("create otlp exporter: %w", err)
 	}
 
-	res, err := resource.New(ctx,
-		resource.WithAttributes(
-			semconv.ServiceName(cfg.ServiceName),
-			semconv.ServiceVersion(cfg.ServiceVersion),
-			semconv.DeploymentEnvironment(cfg.Environment),
-		),
-	)
+	res, err := newResource(ctx, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("create resource: %w", err)
+		return nil, err
 	}
 
 	ratio := cfg.SampleRatio
@@ -74,6 +68,22 @@ func Init(ctx context.Context, cfg Config) (ShutdownFunc, error) {
 	otel.SetTracerProvider(tp)
 
 	return tp.Shutdown, nil
+}
+
+// newResource builds the shared service-identifying resource for tracer and
+// meter providers.
+func newResource(ctx context.Context, cfg Config) (*resource.Resource, error) {
+	res, err := resource.New(ctx,
+		resource.WithAttributes(
+			semconv.ServiceName(cfg.ServiceName),
+			semconv.ServiceVersion(cfg.ServiceVersion),
+			semconv.DeploymentEnvironment(cfg.Environment),
+		),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create resource: %w", err)
+	}
+	return res, nil
 }
 
 func stripScheme(endpoint string) string {

@@ -16,6 +16,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivertype"
+	"github.com/riverqueue/rivercontrib/otelriver"
 )
 
 // QueueName is the only queue this service uses. Jobs land on it only if the
@@ -54,10 +56,24 @@ func CheckLLMTimeoutMargin(llmTimeout time.Duration) error {
 	return nil
 }
 
+// otelMiddleware emits river.* traces and metrics for queue operations. It
+// reads the process-global Tracer/Meter providers, so it is silent in tests
+// (noop providers) and live wherever tracing.Init ran. Trace propagation
+// injects the webhook span's traceparent into job metadata at insert and
+// links the work span back to it — async jobs get links, not parent
+// relationships, by OTel convention.
+func otelMiddleware() rivertype.Middleware {
+	return otelriver.NewMiddleware(&otelriver.MiddlewareConfig{
+		EnableTracePropagation: true,
+	})
+}
+
 // NewInsertClient returns an enqueue-only River client for the API process.
 // It never starts and consumes no jobs.
 func NewInsertClient(pool *pgxpool.Pool) (*river.Client[pgx.Tx], error) {
-	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	client, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
+		Middleware: []rivertype.Middleware{otelMiddleware()},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("river insert client: %w", err)
 	}
@@ -75,6 +91,7 @@ func NewWorkerClient(pool *pgxpool.Pool, workers *river.Workers) (*river.Client[
 		Workers:                     workers,
 		JobTimeout:                  JobTimeout,
 		DiscardedJobRetentionPeriod: -1,
+		Middleware:                  []rivertype.Middleware{otelMiddleware()},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("river worker client: %w", err)

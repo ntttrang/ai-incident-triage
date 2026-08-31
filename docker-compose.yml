@@ -22,6 +22,9 @@ services:
       retries: 10
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Runs only on a fresh data volume; existing stacks apply the same SQL
+      # by hand (see docs/observability-notes.md).
+      - ./deploy/observability/postgres-init/grafana-ro.sql:/docker-entrypoint-initdb.d/10-grafana-ro.sql:ro
 
   app:
     build: .
@@ -72,6 +75,8 @@ services:
       LOG_LEVEL: info
       OTEL_SERVICE_NAME: ai-incident-triage-worker
       SERVICE_VERSION: "1.0.0"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+      OTEL_TRACES_SAMPLER_ARG: "1.0"
       DB_HOST: postgres
       DB_PORT: "5432"
       DB_USER: postgres

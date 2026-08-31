@@ -6,7 +6,7 @@ Built in Go with a hexagonal architecture (ports & adapters), forked from [go-he
 
 ## Status
 
-Phase 1 — repository bootstrap complete. Phase 2 — incident domain live: signed Jira webhook ingest with two-level idempotency, incident read API, `make seed`. Phase 3 — classification pipeline live: every ingest transactionally enqueues a River job; a worker process classifies incidents with OpenAI structured outputs, falls back to a deterministic heuristic when the LLM is unavailable (circuit breaker), and stores the verdict with `classification_source` + a suggested runbook. Dashboards and the eval harness land in the next phases.
+Phase 1 — repository bootstrap complete. Phase 2 — incident domain live: signed Jira webhook ingest with two-level idempotency, incident read API, `make seed`. Phase 3 — classification pipeline live: every ingest transactionally enqueues a River job; a worker process classifies incidents with OpenAI structured outputs, falls back to a deterministic heuristic when the LLM is unavailable (circuit breaker), and stores the verdict with `classification_source` + a suggested runbook. Phase 4 — observability complete: worker metrics scraped, `river.*` metrics bridged through the OTel collector, webhook→worker trace linkage, read-only Postgres datasource, and a four-row Grafana pipeline dashboard. The eval harness lands next.
 
 ## Quick start (Docker Compose)
 
@@ -20,11 +20,13 @@ Brings up the app, the classification worker, PostgreSQL, postgres-exporter, and
 | Service | URL |
 |---------|-----|
 | API | http://localhost:8085 |
-| Worker metrics | not published to the host; `docker compose exec worker wget -qO- http://127.0.0.1:8086/metrics` (Prometheus scrape config lands with the phase-4 dashboards) |
-| Grafana | http://localhost:3000 (admin/admin) |
-| Prometheus | http://localhost:9090 |
+| Grafana | http://localhost:3000 (admin/admin) — "AI Incident Triage — Pipeline" dashboard |
+| Prometheus | http://localhost:9090 (scrapes app, worker, postgres-exporter, OTel bridge) |
 | Tempo | http://localhost:3200 |
 | Loki | http://localhost:3100 |
+
+Worker metrics are scraped over the compose network at `worker:8086` (not
+published to the host).
 
 ```bash
 curl -s http://localhost:8085/healthz   # {"status":"ok"}
@@ -73,11 +75,25 @@ Three pillars wired end-to-end and correlated via `trace_id`:
 
 | Pillar | Path |
 |--------|------|
-| **Traces** | App → OTEL Collector → Tempo; explore from Grafana |
-| **Metrics** | Prometheus scrapes `app:8085`, `postgres-exporter:9187`, collector self-metrics |
+| **Traces** | App + worker → OTEL Collector → Tempo; the enqueue span links to the worker's `river.work` span through the job's metadata (see `docs/observability-notes.md`) |
+| **Metrics** | Prometheus scrapes `app:8085`, `worker:8086`, `postgres-exporter:9187`, and the collector's OTLP→Prometheus bridge (`:8889`, source of `river.*` metrics) |
 | **Logs** | stdout (JSON slog with `request_id`, `trace_id`) → Promtail → Loki |
 
-Datasources (Prometheus, Loki, Tempo) are auto-provisioned in Grafana; dashboards live under `deploy/observability/grafana/dashboards/`.
+Datasources (Prometheus, Loki, Tempo, Postgres read-only) are auto-provisioned
+in Grafana. The **AI Incident Triage — Pipeline** dashboard (4 rows: ingest,
+queue, LLM, service RED) provisions from
+`deploy/observability/grafana/dashboards/`; queue-depth panels query
+`river_job` directly through a read-only role.
+
+**Demo choreography** (queue visibly builds, then drains):
+
+```bash
+docker compose stop worker          # classification paused
+make seed                           # 12 incidents → jobs pile up "available"
+docker compose start worker         # queue drains; fallback trips increment (no API key)
+```
+
+The dashboard refresh is pinned to 5s so both phases are visible live.
 
 ## Local development
 

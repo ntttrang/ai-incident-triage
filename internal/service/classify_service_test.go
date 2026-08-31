@@ -78,6 +78,7 @@ type countingObserver struct {
 	calls    int
 	source   string
 	severity string
+	failed   int
 }
 
 func (o *countingObserver) ObserveClassification(source, severity string, _ time.Duration) {
@@ -85,6 +86,8 @@ func (o *countingObserver) ObserveClassification(source, severity string, _ time
 	o.source = source
 	o.severity = severity
 }
+
+func (o *countingObserver) ObserveClassificationFailure() { o.failed++ }
 
 // --- tests ----------------------------------------------------------------
 
@@ -146,11 +149,13 @@ func TestClassifyMissingIncidentErrors(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrNotFound)
 }
 
-func TestMarkFailedDelegates(t *testing.T) {
+func TestMarkFailedDelegatesAndReports(t *testing.T) {
 	repo := newClassRepo(nil)
-	svc := service.NewClassifyService(fakeClassifier{}, fakeKB{}, repo, logger.New("error"), nil)
+	obs := &countingObserver{}
+	svc := service.NewClassifyService(fakeClassifier{}, fakeKB{}, repo, logger.New("error"), obs)
 
 	id := uuid.New()
 	require.NoError(t, svc.MarkFailed(context.Background(), id))
 	require.Equal(t, []uuid.UUID{id}, repo.marked)
+	assert.Equal(t, 1, obs.failed, "an exhausted-retries incident counts as one classification failure")
 }

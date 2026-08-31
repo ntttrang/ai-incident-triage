@@ -19,6 +19,10 @@ exporters:
     endpoint: tempo:4317
     tls:
       insecure: true
+  # Prometheus exporter: exposes received OTLP metrics (river.* tier) for
+  # scraping on :8889, separate from the collector's own :8888 telemetry.
+  prometheus:
+    endpoint: 0.0.0.0:8889
   debug:
     verbosity: basic
 
@@ -31,3 +35,7 @@ service:
       receivers: [otlp]
       processors: [memory_limiter, batch]
       exporters: [otlp/tempo, debug]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus]

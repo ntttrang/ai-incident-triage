@@ -85,7 +85,7 @@ func newServer(t *testing.T) *httptest.Server {
 		Log:       log,
 		Metrics:   metrics.New(),
 		Health:    httpadapter.NewHealthHandler(pool),
-		Webhook:   httpadapter.NewWebhookHandler(svc, testSecret, log),
+		Webhook:   httpadapter.NewWebhookHandler(svc, testSecret, log, nil),
 		Incidents: httpadapter.NewIncidentHandler(svc, log),
 		Env:       "test",
 	})

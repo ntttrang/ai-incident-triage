@@ -10,6 +10,13 @@ scrape_configs:
         labels:
           service: ai-incident-triage
 
+  - job_name: ai-incident-triage-worker
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["worker:8086"]
+        labels:
+          service: ai-incident-triage-worker
+
   - job_name: postgres-exporter
     static_configs:
       - targets: ["postgres-exporter:9187"]
@@ -19,3 +26,13 @@ scrape_configs:
   - job_name: otel-collector
     static_configs:
       - targets: ["otel-collector:8888"]
+
+  # OTLP metrics bridged to Prometheus exposition (river.* tier). honor_labels
+  # keeps the bridge's service-name `job` label instead of the scrape job
+  # name, so `by (job)` splits per process.
+  - job_name: otel-collector-metrics
+    honor_labels: true
+    static_configs:
+      - targets: ["otel-collector:8889"]
+        labels:
+          service: otel-bridge
