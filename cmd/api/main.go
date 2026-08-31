@@ -72,6 +72,24 @@ func run() error {
 		}
 	}()
 
+	// river.* metrics ride the same OTLP endpoint; noop when unconfigured.
+	shutdownMeter, err := tracing.InitMeter(ctx, tracing.Config{
+		ServiceName:    cfg.ServiceName,
+		ServiceVersion: cfg.ServiceVersion,
+		Environment:    cfg.Env,
+		OTLPEndpoint:   cfg.OTLPEndpoint,
+	})
+	if err != nil {
+		return fmt.Errorf("meter: %w", err)
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		if err := shutdownMeter(shutdownCtx); err != nil {
+			log.Error("meter shutdown", "error", err)
+		}
+	}()
+
 	pool, err := database.NewPool(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("database: %w", err)
@@ -100,7 +118,7 @@ func run() error {
 		Log:         log,
 		Metrics:     m,
 		Health:      httpadapter.NewHealthHandler(pool),
-		Webhook:     httpadapter.NewWebhookHandler(incidentSvc, cfg.WebhookSecret, log),
+		Webhook:     httpadapter.NewWebhookHandler(incidentSvc, cfg.WebhookSecret, log, m),
 		Incidents:   httpadapter.NewIncidentHandler(incidentSvc, log),
 		Env:         cfg.Env,
 		ServiceName: cfg.ServiceName,

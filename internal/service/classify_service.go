@@ -15,6 +15,9 @@ import (
 // implements it; a nil observer is allowed so tests stay dependency-free.
 type ClassifyObserver interface {
 	ObserveClassification(source string, severity string, duration time.Duration)
+	// ObserveClassificationFailure reports an incident that exhausted its
+	// classification retries.
+	ObserveClassificationFailure()
 }
 
 // ClassifyService is the worker-side use case: load an incident, classify it
@@ -76,5 +79,11 @@ func (s *ClassifyService) Classify(ctx context.Context, id uuid.UUID) error {
 
 // MarkFailed records that classification exhausted its retries.
 func (s *ClassifyService) MarkFailed(ctx context.Context, id uuid.UUID) error {
-	return s.repo.MarkFailed(ctx, id)
+	if err := s.repo.MarkFailed(ctx, id); err != nil {
+		return err
+	}
+	if s.observe != nil {
+		s.observe.ObserveClassificationFailure()
+	}
+	return nil
 }

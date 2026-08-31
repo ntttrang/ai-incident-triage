@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/ntttrang/ai-incident-triage/internal/platform/database"
 	"github.com/ntttrang/ai-incident-triage/internal/platform/logger"
 	"github.com/ntttrang/ai-incident-triage/internal/platform/metrics"
+	"github.com/ntttrang/ai-incident-triage/internal/platform/tracing"
 	"github.com/ntttrang/ai-incident-triage/internal/service"
 )
 
@@ -45,15 +47,48 @@ func run() error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	// Compose already names the worker service via OTEL_SERVICE_NAME
-	// (ai-incident-triage-worker); local runs get the suffix appended.
-	serviceName := cfg.ServiceName
-	if !strings.HasSuffix(serviceName, "-worker") {
-		serviceName += "-worker"
+	bootCtx, bootCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer bootCancel()
+
+	shutdownTracing, err := tracing.Init(bootCtx, tracing.Config{
+		ServiceName:    serviceName(cfg),
+		ServiceVersion: cfg.ServiceVersion,
+		Environment:    cfg.Env,
+		OTLPEndpoint:   cfg.OTLPEndpoint,
+		SampleRatio:    cfg.TraceSampleRatio,
+	})
+	if err != nil {
+		return fmt.Errorf("tracing: %w", err)
 	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		if err := shutdownTracing(shutdownCtx); err != nil {
+			fmt.Fprintf(os.Stderr, "tracing shutdown: %v\n", err)
+		}
+	}()
+
+	// river.* metrics ride the same OTLP endpoint; noop when unconfigured.
+	shutdownMeter, err := tracing.InitMeter(bootCtx, tracing.Config{
+		ServiceName:    serviceName(cfg),
+		ServiceVersion: cfg.ServiceVersion,
+		Environment:    cfg.Env,
+		OTLPEndpoint:   cfg.OTLPEndpoint,
+	})
+	if err != nil {
+		return fmt.Errorf("meter: %w", err)
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		if err := shutdownMeter(shutdownCtx); err != nil {
+			fmt.Fprintf(os.Stderr, "meter shutdown: %v\n", err)
+		}
+	}()
+
 	log := logger.NewWithOptions(logger.Options{
 		Level:   cfg.LogLevel,
-		Service: serviceName,
+		Service: serviceName(cfg),
 		Env:     cfg.Env,
 	})
 
@@ -72,10 +107,7 @@ func run() error {
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	pool, err := database.NewPool(ctx, cfg)
+	pool, err := database.NewPool(bootCtx, cfg)
 	if err != nil {
 		return fmt.Errorf("database: %w", err)
 	}
@@ -88,20 +120,24 @@ func run() error {
 	}
 
 	m := metrics.New()
+	// The worker's /metrics is scraped (worker:8086); without this loop its
+	// db_pool_* gauges would export misleading zeros on a live endpoint.
+	go collectDBPoolMetrics(pool, m)
 
 	// Classifier chain: OpenAI primary behind a circuit breaker, heuristic
 	// fallback, with the optional force-fail knob for demos and tests.
 	primary, fallback := llmadapter.ApplyForceFail(
 		llmadapter.NewOpenAIClassifier(llmadapter.OpenAIConfig{
-			APIKey:  cfg.OpenAIAPIKey,
-			Model:   cfg.OpenAIModel,
-			Timeout: time.Duration(cfg.OpenAITimeoutSecs) * time.Second,
+			APIKey:   cfg.OpenAIAPIKey,
+			Model:    cfg.OpenAIModel,
+			Timeout:  time.Duration(cfg.OpenAITimeoutSecs) * time.Second,
+			Observer: m,
 		}),
 		llmadapter.NewHeuristicClassifier(),
 		forceFail,
 	)
 	classifier := llmadapter.NewResilientClassifier(primary, fallback,
-		llmadapter.NewCircuitBreaker(llmadapter.DefaultBreakerThreshold, llmadapter.DefaultBreakerCooldown))
+		llmadapter.NewCircuitBreaker(llmadapter.DefaultBreakerThreshold, llmadapter.DefaultBreakerCooldown), m)
 
 	incidentRepo := postgresadapter.NewIncidentRepository(pool)
 	classifySvc := service.NewClassifyService(classifier, kbadapter.NewStaticKB(), incidentRepo, log, m)
@@ -164,4 +200,23 @@ func run() error {
 	}
 	log.Info("worker stopped gracefully")
 	return nil
+}
+
+// serviceName names the worker process distinctly from the API in traces and
+// logs. Compose sets OTEL_SERVICE_NAME to ai-incident-triage-worker already;
+// local runs inherit the API's name and get the suffix appended.
+func serviceName(cfg *config.Config) string {
+	if strings.HasSuffix(cfg.ServiceName, "-worker") {
+		return cfg.ServiceName
+	}
+	return cfg.ServiceName + "-worker"
+}
+
+func collectDBPoolMetrics(pool *pgxpool.Pool, m *metrics.Metrics) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		m.ObserveDBPool(pool.Stat())
+		<-ticker.C
+	}
 }

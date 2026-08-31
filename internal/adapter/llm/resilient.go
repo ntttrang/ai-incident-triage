@@ -23,20 +23,23 @@ type ResilientClassifier struct {
 	primary  domain.Classifier
 	fallback domain.Classifier
 	breaker  *CircuitBreaker
+	observer Observer
 }
 
-// NewResilientClassifier wires primary → fallback behind a breaker.
-func NewResilientClassifier(primary, fallback domain.Classifier, breaker *CircuitBreaker) *ResilientClassifier {
-	return &ResilientClassifier{primary: primary, fallback: fallback, breaker: breaker}
+// NewResilientClassifier wires primary → fallback behind a breaker. observer
+// may be nil.
+func NewResilientClassifier(primary, fallback domain.Classifier, breaker *CircuitBreaker, observer Observer) *ResilientClassifier {
+	return &ResilientClassifier{primary: primary, fallback: fallback, breaker: breaker, observer: observer}
 }
 
 // NewDefaultResilientClassifier builds the production shape: OpenAI primary,
-// heuristic fallback, default breaker tuning.
+// heuristic fallback, default breaker tuning, shared observer.
 func NewDefaultResilientClassifier(cfg OpenAIConfig) *ResilientClassifier {
 	return NewResilientClassifier(
 		NewOpenAIClassifier(cfg),
 		NewHeuristicClassifier(),
 		NewCircuitBreaker(DefaultBreakerThreshold, DefaultBreakerCooldown),
+		cfg.Observer,
 	)
 }
 
@@ -57,6 +60,9 @@ func (r *ResilientClassifier) Classify(ctx context.Context, inc domain.Incident)
 	cls, err := r.fallback.Classify(ctx, inc)
 	if err != nil {
 		return nil, fmt.Errorf("llm and heuristic both failed: heuristic: %w", err)
+	}
+	if r.observer != nil {
+		r.observer.ObserveFallbackTrip()
 	}
 	return cls, nil
 }

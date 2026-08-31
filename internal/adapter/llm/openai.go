@@ -71,9 +71,10 @@ Scoring guidance:
 // OpenAIClassifier classifies incidents via Chat Completions structured
 // outputs. It implements domain.Classifier.
 type OpenAIClassifier struct {
-	client  openai.Client
-	model   string
-	timeout time.Duration
+	client   openai.Client
+	model    string
+	timeout  time.Duration
+	observer Observer
 }
 
 // OpenAIConfig configures the OpenAI classifier. BaseURL is empty in
@@ -85,6 +86,8 @@ type OpenAIConfig struct {
 	// Timeout overrides LLMTimeout; zero means LLMTimeout. Tests use short
 	// values to exercise the timeout path quickly.
 	Timeout time.Duration
+	// Observer receives request latency and token telemetry; may be nil.
+	Observer Observer
 }
 
 // NewOpenAIClassifier builds a classifier with one automatic retry (the SDK's
@@ -105,9 +108,10 @@ func NewOpenAIClassifier(cfg OpenAIConfig) *OpenAIClassifier {
 		opts = append(opts, option.WithAPIKey(cfg.APIKey))
 	}
 	return &OpenAIClassifier{
-		client:  openai.NewClient(opts...),
-		model:   cfg.Model,
-		timeout: cfg.Timeout,
+		client:   openai.NewClient(opts...),
+		model:    cfg.Model,
+		timeout:  cfg.Timeout,
+		observer: cfg.Observer,
 	}
 }
 
@@ -118,6 +122,7 @@ func (c *OpenAIClassifier) Classify(ctx context.Context, inc domain.Incident) (*
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
+	start := time.Now()
 	resp, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Model: c.model,
 		Messages: []openai.ChatCompletionMessageParamUnion{
@@ -135,8 +140,15 @@ func (c *OpenAIClassifier) Classify(ctx context.Context, inc domain.Incident) (*
 			},
 		},
 	})
+	if c.observer != nil {
+		c.observer.ObserveLLMRequest(c.model, time.Since(start), err != nil)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("openai chat completion: %w", err)
+	}
+	if c.observer != nil {
+		c.observer.ObserveLLMTokens(c.model, "prompt", resp.Usage.PromptTokens)
+		c.observer.ObserveLLMTokens(c.model, "completion", resp.Usage.CompletionTokens)
 	}
 	if len(resp.Choices) == 0 {
 		return nil, fmt.Errorf("openai chat completion: no choices returned")

@@ -49,3 +49,20 @@ datasources:
         enabled: true
       lokiSearch:
         datasourceUid: loki
+
+  # Queue-depth panels query river_job directly (River exports no native
+  # Prometheus queue-depth metric). Read-only role from postgres-init.
+  - name: Postgres
+    type: postgres
+    access: proxy
+    uid: postgres
+    url: postgres:5432
+    database: ai_incident_triage
+    user: grafana_ro
+    secureJsonData:
+      password: grafana_ro_demo
+    editable: false
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
